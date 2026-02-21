@@ -82,6 +82,7 @@ export default function GamePage() {
 
   const turnList = gameState?.turnList ?? [];
   const columns = turnList.length ? turnList : Array.from(participantsMap.keys());
+  const turnUserId = gameState?.curTurnUserId ?? null;
 
   const isMyTurn = gameState?.curTurnUserId && myUserId === gameState.curTurnUserId;
   const possibleScores = useMemo(() => calcPossibleScores(gameState?.dice ?? []), [gameState?.dice]);
@@ -311,8 +312,10 @@ export default function GamePage() {
                         <td>{cat.label}</td>
                         {columns.map((id) => {
                           const score = gameState.scores?.[String(id)]?.[cat.key];
-                          const canSelect = !gameOver && isMyTurn && gameState.leftRollCnt < 3 && id === myUserId && score == null;
-                          const possible = canSelect ? possibleScores?.[cat.key] : null;
+                          const isTurnColumn = Number(id) === Number(turnUserId);
+                          const canShowPossible = !gameOver && isTurnColumn && gameState.leftRollCnt < 3 && score == null;
+                          const canSelect = canShowPossible && isMyTurn && id === myUserId;
+                          const possible = canShowPossible ? possibleScores?.[cat.key] : null;
                           const isPending =
                             pendingSelection &&
                             pendingSelection.userId === id &&
@@ -324,6 +327,8 @@ export default function GamePage() {
                               ? "score-cell score-cell-pending"
                               : canSelect
                                 ? "score-cell score-cell-selectable"
+                                : canShowPossible
+                                  ? "score-cell score-cell-preview"
                                 : "score-cell score-cell-empty";
 
                           return (
@@ -336,7 +341,7 @@ export default function GamePage() {
                                 ? score
                                 : isPending
                                   ? "..."
-                                  : canSelect
+                                  : canShowPossible
                                     ? (possible ?? 0)
                                     : "-"}
                             </td>

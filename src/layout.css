@@ -220,6 +220,12 @@ input::placeholder {
   background: #cffafe;
 }
 
+.score-cell-preview {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+}
+
 .score-cell-pending {
   background: #fff7ed;
   color: #b45309;
