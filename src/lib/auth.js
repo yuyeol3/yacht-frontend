@@ -1,0 +1,121 @@
+﻿import { API_BASE } from "./api.js";
+
+const TOKEN_KEY = "yacht.accessToken";
+const PROFILE_KEY = "yacht.profile";
+
+export function getAccessToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setAccessToken(token) {
+  if (!token) return;
+  localStorage.setItem(TOKEN_KEY, token);
+  const parsed = parseJwt(token);
+  if (parsed) {
+    const profile = {
+      userId: parsed.userId ?? parsed.id ?? parsed.sub ?? null,
+      nickname: parsed.nickname ?? parsed.userNick ?? parsed.nick ?? null,
+      loginId: parsed.loginId ?? null
+    };
+    mergeProfile(profile);
+  }
+}
+
+export function clearAuth() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(PROFILE_KEY);
+}
+
+export function getProfile() {
+  const raw = localStorage.getItem(PROFILE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
+}
+
+export function setProfile(profile) {
+  if (!profile) return;
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+
+export function mergeProfile(patch) {
+  const current = getProfile() ?? {};
+  setProfile({ ...current, ...patch });
+}
+
+export function parseJwt(token) {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+    const decoded = atob(padded);
+    return JSON.parse(decoded);
+  } catch (err) {
+    return null;
+  }
+}
+
+export async function refreshAccessToken() {
+  const res = await fetch(`${API_BASE}/auth/refresh`, {
+    method: "POST",
+    credentials: "include"
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  const { accessToken } = applyAuthResponse(body);
+  return accessToken ?? null;
+}
+
+export function isTokenExpired(token, skewSeconds = 10) {
+  const parsed = parseJwt(token);
+  const exp = Number(parsed?.exp);
+  if (!Number.isFinite(exp)) return true;
+  const now = Math.floor(Date.now() / 1000);
+  return exp <= now + skewSeconds;
+}
+
+export async function getSocketAccessToken() {
+  const token = getAccessToken();
+  if (!token) {
+    return await refreshAccessToken();
+  }
+  if (isTokenExpired(token)) {
+    const refreshed = await refreshAccessToken();
+    return refreshed ?? null;
+  }
+  return token;
+}
+
+function readAuthShape(payload) {
+  if (!payload) return { accessToken: null, userNick: null };
+  if (typeof payload === "string") {
+    return { accessToken: payload, userNick: null };
+  }
+  if (typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, "data")) {
+    return readAuthShape(payload.data);
+  }
+
+  const accessToken = payload.accessToken ?? payload.token ?? payload.access_token ?? null;
+  const userNick = payload.userNick ?? payload.nickname ?? payload.nick ?? null;
+  return { accessToken, userNick };
+}
+
+export function applyAuthResponse(payload, { loginId = null, fallbackNick = null } = {}) {
+  const { accessToken, userNick } = readAuthShape(payload);
+  if (accessToken) {
+    setAccessToken(accessToken);
+  }
+
+  const patch = {};
+  if (loginId) patch.loginId = loginId;
+  if (userNick ?? fallbackNick) patch.nickname = userNick ?? fallbackNick;
+  if (Object.keys(patch).length > 0) {
+    mergeProfile(patch);
+  }
+
+  return { accessToken, userNick: userNick ?? fallbackNick ?? null };
+}
