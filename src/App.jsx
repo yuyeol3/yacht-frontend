@@ -1,11 +1,11 @@
-﻿import { useEffect } from "react";
+﻿import { useEffect, useState } from "react";
 import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import LoginPage from "./components/LoginPage.jsx";
 import SignupPage from "./components/SignupPage.jsx";
 import LobbyPage from "./components/LobbyPage.jsx";
 import RoomPage from "./components/RoomPage.jsx";
 import GamePage from "./components/GamePage.jsx";
-import { getAccessToken } from "./lib/auth.js";
+import { clearAuth, getAccessToken, isTokenExpired, refreshAccessToken } from "./lib/auth.js";
 import { disconnectWs } from "./lib/wsClient.js";
 
 function isRealtimePath(pathname) {
@@ -25,18 +25,98 @@ function SocketLifecycle() {
 }
 
 function RequireAuth({ children }) {
-  const token = getAccessToken();
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
+  const [ready, setReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const check = async () => {
+      const token = getAccessToken();
+      if (!token) {
+        if (active) {
+          setAuthed(false);
+          setReady(true);
+        }
+        return;
+      }
+
+      if (!isTokenExpired(token)) {
+        if (active) {
+          setAuthed(true);
+          setReady(true);
+        }
+        return;
+      }
+
+      const refreshed = await refreshAccessToken();
+      if (!active) return;
+
+      if (refreshed) {
+        setAuthed(true);
+      } else {
+        clearAuth();
+        setAuthed(false);
+      }
+      setReady(true);
+    };
+
+    check();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!ready) return <div />;
+  if (!authed) return <Navigate to="/login" replace />;
   return children;
 }
 
 function PublicOnly({ children }) {
-  const token = getAccessToken();
-  if (token) {
-    return <Navigate to="/lobby" replace />;
-  }
+  const [ready, setReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const check = async () => {
+      const token = getAccessToken();
+      if (!token) {
+        if (active) {
+          setAuthed(false);
+          setReady(true);
+        }
+        return;
+      }
+
+      if (!isTokenExpired(token)) {
+        if (active) {
+          setAuthed(true);
+          setReady(true);
+        }
+        return;
+      }
+
+      const refreshed = await refreshAccessToken();
+      if (!active) return;
+
+      if (refreshed) {
+        setAuthed(true);
+      } else {
+        clearAuth();
+        setAuthed(false);
+      }
+      setReady(true);
+    };
+
+    check();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!ready) return <div />;
+  if (authed) return <Navigate to="/lobby" replace />;
   return children;
 }
 

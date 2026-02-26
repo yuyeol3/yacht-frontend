@@ -1,4 +1,4 @@
-﻿import { refreshAccessToken, getAccessToken, clearAuth } from "./auth.js";
+﻿import { refreshAccessToken, getAccessToken, clearAuth, isTokenExpired } from "./auth.js";
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -28,12 +28,27 @@ async function parseJsonSafe(res) {
   }
 }
 
+function forceLogout() {
+  clearAuth();
+  if (typeof window !== "undefined") {
+    window.location.hash = "/login";
+  }
+}
+
 export async function apiFetch(path, options = {}, { auth = true } = {}) {
   const url = `${API_BASE}${path}`;
   const headers = normalizeHeaders(options.headers ?? {});
 
   if (auth) {
-    const token = getAccessToken();
+    let token = getAccessToken();
+    if (token && isTokenExpired(token)) {
+      token = await refreshAccessToken();
+      if (!token) {
+        forceLogout();
+        throw new ApiError("인증이 만료되었습니다. 다시 로그인해 주세요.", 401, "AUTH_EXPIRED");
+      }
+    }
+
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
     }
@@ -56,7 +71,9 @@ export async function apiFetch(path, options = {}, { auth = true } = {}) {
       });
       return handleResponse(retry);
     }
-    clearAuth();
+
+    forceLogout();
+    throw new ApiError("인증이 만료되었습니다. 다시 로그인해 주세요.", 401, "AUTH_EXPIRED");
   }
 
   return handleResponse(res);

@@ -19,9 +19,9 @@ export default function TopBar({ subtitle }) {
   return (
     <div className="top-bar">
       <div className="brand">
-        <span>Y</span>
+        <span className="brand-mark">Y</span>
         Yacht Multiplayer
-        {subtitle ? <span className="tag">{subtitle}</span> : null}
+        {subtitle ? <span className="page-chip">{subtitle}</span> : null}
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <span className="subtle">{profile?.nickname ?? profile?.loginId ?? "Player"}</span>

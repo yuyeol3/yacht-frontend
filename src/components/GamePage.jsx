@@ -24,6 +24,8 @@ export default function GamePage() {
   const [overlayDiceValues, setOverlayDiceValues] = useState([]);
   const [overlaySeed, setOverlaySeed] = useState(1);
   const rollOverlayMs = 2400;
+  const [showCategoryToast, setShowCategoryToast] = useState(false);
+  const [categoryToastText, setCategoryToastText] = useState("");
   const profile = getProfile();
 
   useEffect(() => {
@@ -87,7 +89,42 @@ export default function GamePage() {
   const isMyTurn = gameState?.curTurnUserId && myUserId === gameState.curTurnUserId;
   const possibleScores = useMemo(() => calcPossibleScores(gameState?.dice ?? []), [gameState?.dice]);
 
+  const findBestCategoryLabel = (state, userId) => {
+    const dice = state?.dice ?? [];
+    const scores = calcPossibleScores(dice);
+    const excluded = new Set(["ones", "twos", "threes", "fours", "fives", "sixes", "choice"]);
+    const selectedScores = state?.scores?.[String(userId)] ?? {};
+    let bestLabel = "";
+    let bestScore = -1;
+    for (const cat of SCORE_CATEGORIES) {
+      if (excluded.has(cat.key)) continue;
+      if (selectedScores?.[cat.key] != null) continue;
+      const value = scores?.[cat.key];
+      if (value == null) continue;
+      if (value > bestScore) {
+        bestScore = value;
+        bestLabel = cat.label;
+      }
+    }
+    return bestScore > 0 ? bestLabel : "";
+  };
+
   const computeRanking = (state) => {
+    if (Array.isArray(state?.playedResults) && state.playedResults.length > 0) {
+      return [...state.playedResults]
+        .map((entry) => ({
+          id: entry.id,
+          name: entry.nickname ?? `User #${entry.id}`,
+          total: entry.score ?? 0,
+          rank: entry.rank ?? null,
+          result: entry.result ?? null
+        }))
+        .sort((a, b) => {
+          if (a.rank != null && b.rank != null) return a.rank - b.rank;
+          return b.total - a.total;
+        });
+    }
+
     const scores = state?.scores ?? {};
     return Object.keys(scores)
       .map((id) => ({
@@ -142,6 +179,15 @@ export default function GamePage() {
                 setOverlaySeed(Date.now() % 100000);
                 setShowRollOverlay(true);
               }
+
+              if (payload.data.curTurnUserId === myUserId) {
+                const bestLabel = findBestCategoryLabel(payload.data, myUserId);
+                if (bestLabel) {
+                  setCategoryToastText(bestLabel);
+                  setShowCategoryToast(false);
+                  setTimeout(() => setShowCategoryToast(true), 10);
+                }
+              }
             }
 
             if (["START", "ROLL", "KEEP_TOGGLE", "SELECT_SCORE"].includes(payload?.type) && payload?.data) {
@@ -178,7 +224,7 @@ export default function GamePage() {
     if (score != null) {
       setPendingSelection(null);
     }
-  }, [pendingSelection, gameState]);
+  }, [pendingSelection, gameState, myUserId]);
 
   useEffect(() => {
     if (!timedOutBanner) return;
@@ -191,6 +237,12 @@ export default function GamePage() {
     const timer = setTimeout(() => setShowRollOverlay(false), rollOverlayMs);
     return () => clearTimeout(timer);
   }, [showRollOverlay, rollOverlayMs]);
+
+  useEffect(() => {
+    if (!showCategoryToast) return;
+    const timer = setTimeout(() => setShowCategoryToast(false), 1200);
+    return () => clearTimeout(timer);
+  }, [showCategoryToast]);
 
   useEffect(() => {
     if (!gameState?.turnTimeoutTime) return;
@@ -233,6 +285,9 @@ export default function GamePage() {
   return (
     <div>
       <TopBar subtitle={`Game #${roomId}`} />
+      <div className={`category-toast ${showCategoryToast ? "show" : ""}`}>
+        {categoryToastText}
+      </div>
       <DiceRoll3DOverlay
         visible={showRollOverlay}
         diceValues={overlayDiceValues}
@@ -293,7 +348,7 @@ export default function GamePage() {
               <h2>점수판</h2>
               {gameOver && ranking.length ? (
                 <div className="banner" style={{ marginBottom: 12 }}>
-                  {ranking.map((r, idx) => `${idx + 1}위 ${r.name} (${r.total})`).join(" · ")}
+                  {ranking.map((r, idx) => `${r.rank ?? idx + 1}위 ${r.name} (${r.total})`).join(" · ")}
                 </div>
               ) : null}
               <div style={{ overflowX: "auto" }}>

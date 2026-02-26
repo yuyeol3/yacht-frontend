@@ -7,7 +7,6 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
-  const [nickname, setNickname] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -20,7 +19,7 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({ loginId, password })
       }, { auth: false });
-      applyAuthResponse(authResult, { loginId, fallbackNick: nickname || null });
+      applyAuthResponse(authResult, { loginId });
       navigate("/lobby");
     } catch (err) {
       setError(err.message);
@@ -56,11 +55,6 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-            />
-            <input
-              placeholder="Nickname (선택)"
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
             />
             <button className="button primary" type="submit" disabled={loading}>
               {loading ? "접속 중..." : "Login"}

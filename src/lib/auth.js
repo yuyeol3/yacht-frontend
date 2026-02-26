@@ -2,6 +2,7 @@
 
 const TOKEN_KEY = "yacht.accessToken";
 const PROFILE_KEY = "yacht.profile";
+let refreshPromise = null;
 
 export function getAccessToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -14,7 +15,7 @@ export function setAccessToken(token) {
   if (parsed) {
     const profile = {
       userId: parsed.userId ?? parsed.id ?? parsed.sub ?? null,
-      nickname: parsed.nickname ?? parsed.userNick ?? parsed.nick ?? null,
+      nickname: parsed.nickname ?? null,
       loginId: parsed.loginId ?? null
     };
     mergeProfile(profile);
@@ -59,15 +60,54 @@ export function parseJwt(token) {
   }
 }
 
+export function extractAccessToken(payload) {
+  if (!payload) return null;
+  if (typeof payload === "string") return payload;
+  if (typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, "data")) {
+    return extractAccessToken(payload.data);
+  }
+  if (typeof payload === "object") {
+    return payload.accessToken ?? payload.token ?? payload.access_token ?? null;
+  }
+  return null;
+}
+
+export function applyAuthResponse(payload, { loginId = null } = {}) {
+  const accessToken = extractAccessToken(payload);
+  if (accessToken) {
+    setAccessToken(accessToken);
+  }
+
+  if (loginId) {
+    mergeProfile({ loginId });
+  }
+
+  return { accessToken };
+}
+
 export async function refreshAccessToken() {
-  const res = await fetch(`${API_BASE}/auth/refresh`, {
-    method: "POST",
-    credentials: "include"
-  });
-  if (!res.ok) return null;
-  const body = await res.json();
-  const { accessToken } = applyAuthResponse(body);
-  return accessToken ?? null;
+  if (refreshPromise) {
+    return await refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        credentials: "include"
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      const { accessToken } = applyAuthResponse(body);
+      return accessToken ?? null;
+    } catch (err) {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return await refreshPromise;
 }
 
 export function isTokenExpired(token, skewSeconds = 10) {
@@ -88,34 +128,4 @@ export async function getSocketAccessToken() {
     return refreshed ?? null;
   }
   return token;
-}
-
-function readAuthShape(payload) {
-  if (!payload) return { accessToken: null, userNick: null };
-  if (typeof payload === "string") {
-    return { accessToken: payload, userNick: null };
-  }
-  if (typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, "data")) {
-    return readAuthShape(payload.data);
-  }
-
-  const accessToken = payload.accessToken ?? payload.token ?? payload.access_token ?? null;
-  const userNick = payload.userNick ?? payload.nickname ?? payload.nick ?? null;
-  return { accessToken, userNick };
-}
-
-export function applyAuthResponse(payload, { loginId = null, fallbackNick = null } = {}) {
-  const { accessToken, userNick } = readAuthShape(payload);
-  if (accessToken) {
-    setAccessToken(accessToken);
-  }
-
-  const patch = {};
-  if (loginId) patch.loginId = loginId;
-  if (userNick ?? fallbackNick) patch.nickname = userNick ?? fallbackNick;
-  if (Object.keys(patch).length > 0) {
-    mergeProfile(patch);
-  }
-
-  return { accessToken, userNick: userNick ?? fallbackNick ?? null };
 }
