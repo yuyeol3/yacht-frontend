@@ -35,8 +35,21 @@ export default function RoomPage() {
     return null;
   }, [room, profile?.userId, profile?.nickname]);
 
-  const isHost = room?.host?.userId && myUserId === room.host.userId;
-  const canStart = isHost && (room?.participants?.length ?? 0) >= 2;
+  const hostUserId = Number(room?.host?.userId ?? room?.hostUserId ?? room?.hostId);
+  const normalizedMyUserId = Number(myUserId);
+  const participantCount = Number.isFinite(Number(room?.participatedUsers))
+    ? Number(room?.participatedUsers)
+    : (room?.participants?.length ?? 0);
+  const hostNick = room?.host?.userNick ?? room?.hostNickName ?? null;
+  const myNick = profile?.nickname ?? null;
+  const isHost =
+    (
+      Number.isFinite(hostUserId) &&
+      Number.isFinite(normalizedMyUserId) &&
+      normalizedMyUserId === hostUserId
+    ) ||
+    (hostNick && myNick && hostNick === myNick);
+  const canStart = connected && isHost && participantCount >= 2;
   const isParticipant = Boolean(
     myUserId != null && room?.participants?.some((p) => Number(p.userId) === Number(myUserId))
   );
@@ -98,6 +111,9 @@ export default function RoomPage() {
               return;
             }
             if (["ENTER", "QUIT", "TOGGLE_READY"].includes(payload?.type)) {
+              if (payload?.data && (payload?.data?.host?.userId != null || payload?.data?.participatedUsers != null)) {
+                setRoom(payload.data);
+              }
               refreshRoom({ silent: true }).catch(() => {});
             }
           } catch (err) {

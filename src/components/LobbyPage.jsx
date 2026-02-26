@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TopBar from "./TopBar.jsx";
 import { apiFetch } from "../lib/api.js";
@@ -11,11 +11,13 @@ export default function LobbyPage() {
   const [loading, setLoading] = useState(false);
   const [roomName, setRoomName] = useState("");
   const [error, setError] = useState("");
+  const loadingRef = useRef(false);
 
-  const loadRooms = async (nextPage = 0, reset = false) => {
-    if (loading) return;
+  const loadRooms = async (nextPage = 0, reset = false, { silent = false } = {}) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
-    setError("");
+    if (!silent) setError("");
     try {
       const data = await apiFetch(`/rooms?page=${nextPage}&size=12&sort=id,desc`);
       const content = data?.content ?? [];
@@ -23,14 +25,35 @@ export default function LobbyPage() {
       setPage(nextPage);
       setLast(Boolean(data?.last));
     } catch (err) {
-      setError(err.message);
+      if (!silent) setError(err.message);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   };
 
   useEffect(() => {
     loadRooms(0, true);
+  }, []);
+
+  useEffect(() => {
+    const poll = () => {
+      if (document.visibilityState !== "visible") return;
+      loadRooms(0, true, { silent: true });
+    };
+
+    const intervalId = setInterval(poll, 60_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        poll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, []);
 
   const createRoom = async () => {
