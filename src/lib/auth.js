@@ -3,14 +3,16 @@
 const TOKEN_KEY = "yacht.accessToken";
 const PROFILE_KEY = "yacht.profile";
 let refreshPromise = null;
+let accessTokenMemory = null;
 
 export function getAccessToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return accessTokenMemory;
 }
 
 export function setAccessToken(token) {
   if (!token) return;
-  localStorage.setItem(TOKEN_KEY, token);
+  accessTokenMemory = token;
+  localStorage.removeItem(TOKEN_KEY);
   const parsed = parseJwt(token);
   if (parsed) {
     const profile = {
@@ -23,6 +25,7 @@ export function setAccessToken(token) {
 }
 
 export function clearAuth() {
+  accessTokenMemory = null;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(PROFILE_KEY);
 }

@@ -1,10 +1,11 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import TopBar from "./TopBar.jsx";
 import { apiFetch } from "../lib/api.js";
 
 export default function LobbyPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [rooms, setRooms] = useState([]);
   const [page, setPage] = useState(0);
   const [last, setLast] = useState(false);
@@ -35,6 +36,14 @@ export default function LobbyPage() {
   useEffect(() => {
     loadRooms(0, true);
   }, []);
+
+  useEffect(() => {
+    const roomError = location.state?.roomError;
+    if (roomError) {
+      setError(roomError);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     const poll = () => {

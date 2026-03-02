@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import TopBar from "./TopBar.jsx";
 import { apiFetch } from "../lib/api.js";
@@ -26,6 +26,10 @@ export default function GamePage() {
   const rollOverlayMs = 2400;
   const [showCategoryToast, setShowCategoryToast] = useState(false);
   const [categoryToastText, setCategoryToastText] = useState("");
+  const [localKept, setLocalKept] = useState([false, false, false, false, false]);
+  const [pendingRollAfterKeepSync, setPendingRollAfterKeepSync] = useState(false);
+  const pendingRollRef = useRef(false);
+  const expectedKeptRef = useRef(null);
   const profile = getProfile();
 
   useEffect(() => {
@@ -87,6 +91,12 @@ export default function GamePage() {
   const turnUserId = gameState?.curTurnUserId ?? null;
 
   const isMyTurn = gameState?.curTurnUserId && myUserId === gameState.curTurnUserId;
+  const canToggleKeep = Boolean(isMyTurn) && !gameOver && (gameState?.leftRollCnt ?? 3) < 3;
+  const serverKept = useMemo(
+    () => (Array.isArray(gameState?.kept) ? gameState.kept.map(Boolean) : [false, false, false, false, false]),
+    [gameState?.kept]
+  );
+  const displayedKept = isMyTurn ? localKept : serverKept;
   const possibleScores = useMemo(() => calcPossibleScores(gameState?.dice ?? []), [gameState?.dice]);
 
   const findBestCategoryLabel = (state, userId) => {
@@ -108,6 +118,18 @@ export default function GamePage() {
     }
     return bestScore > 0 ? bestLabel : "";
   };
+
+  const isSameKept = (a = [], b = []) => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (Boolean(a[i]) !== Boolean(b[i])) return false;
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    pendingRollRef.current = pendingRollAfterKeepSync;
+  }, [pendingRollAfterKeepSync]);
 
   const computeRanking = (state) => {
     if (Array.isArray(state?.playedResults) && state.playedResults.length > 0) {
@@ -138,6 +160,7 @@ export default function GamePage() {
   useEffect(() => {
     let unsubRoom = null;
     let unsubErr = null;
+    let unsubErrLegacy = null;
     let active = true;
 
     connectWs({
@@ -193,19 +216,38 @@ export default function GamePage() {
             if (["START", "ROLL", "KEEP_TOGGLE", "SELECT_SCORE"].includes(payload?.type) && payload?.data) {
               setGameState(payload.data);
             }
+
+            if (payload?.type === "KEEP_TOGGLE" && payload?.data && pendingRollRef.current) {
+              const expected = expectedKeptRef.current;
+              const serverKept = Array.isArray(payload.data.kept) ? payload.data.kept.map(Boolean) : [];
+              if (expected && isSameKept(serverKept, expected)) {
+                setPendingRollAfterKeepSync(false);
+                pendingRollRef.current = false;
+                expectedKeptRef.current = null;
+                sendAction({ type: "ROLL" });
+              }
+            }
           } catch (err) {
             setSocketError("게임 상태 업데이트를 처리하지 못했습니다.");
           }
         });
 
-        unsubErr = subscribeWs(`/user/queue/errors`, (msg) => {
+        const handleSocketError = (msg) => {
           try {
             const payload = JSON.parse(msg.body);
-            setSocketError(payload?.data?.message ?? "동작이 허용되지 않습니다.");
+            const errorData = payload?.data ?? payload;
+            setSocketError(errorData?.message ?? "동작이 허용되지 않습니다.");
+            setPendingRollAfterKeepSync(false);
+            pendingRollRef.current = false;
+            expectedKeptRef.current = null;
           } catch (err) {
             setSocketError("서버 에러 메시지를 처리하지 못했습니다.");
           }
-        });
+        };
+
+        unsubErr = subscribeWs(`/user/queue/errors`, handleSocketError);
+        // Fallback: some brokers expose user queue without `/user` prefix.
+        unsubErrLegacy = subscribeWs(`/queue/errors`, handleSocketError);
       })
       .catch(() => {
         if (active) setSocketError("실시간 연결에 실패했습니다.");
@@ -215,6 +257,7 @@ export default function GamePage() {
       active = false;
       if (unsubRoom) unsubRoom();
       if (unsubErr) unsubErr();
+      if (unsubErrLegacy) unsubErrLegacy();
     };
   }, [roomId, navigate]);
 
@@ -247,7 +290,7 @@ export default function GamePage() {
   useEffect(() => {
     if (!gameState?.turnTimeoutTime) return;
     const update = () => {
-      const target = new Date(gameState.turnTimeoutTime).getTime();
+      const target = new Date(gameState.turnTimeoutTime + "+09:00").getTime();
       const diff = Math.max(0, target - Date.now());
       const mins = Math.floor(diff / 60000);
       const secs = Math.floor((diff % 60000) / 1000);
@@ -258,6 +301,36 @@ export default function GamePage() {
     return () => clearInterval(timer);
   }, [gameState?.turnTimeoutTime]);
 
+  useEffect(() => {
+    if (!isMyTurn) {
+      setLocalKept(serverKept);
+      return;
+    }
+    if (!pendingRollAfterKeepSync) {
+      setLocalKept(serverKept);
+    }
+  }, [isMyTurn, serverKept, pendingRollAfterKeepSync]);
+
+  useEffect(() => {
+    if (isMyTurn) return;
+    setPendingRollAfterKeepSync(false);
+    pendingRollRef.current = false;
+    expectedKeptRef.current = null;
+  }, [isMyTurn]);
+
+  useEffect(() => {
+    if (!pendingRollAfterKeepSync || !gameState) return;
+    const expected = expectedKeptRef.current;
+    if (!expected) return;
+    const serverKept = Array.isArray(gameState.kept) ? gameState.kept.map(Boolean) : [];
+    if (isSameKept(serverKept, expected)) {
+      setPendingRollAfterKeepSync(false);
+      pendingRollRef.current = false;
+      expectedKeptRef.current = null;
+      sendAction({ type: "ROLL" });
+    }
+  }, [pendingRollAfterKeepSync, gameState?.kept]);
+
   const sendAction = (payload) => {
     publishWs({
       destination: `/pub/games/${roomId}/action`,
@@ -265,8 +338,30 @@ export default function GamePage() {
     });
   };
 
-  const rollDice = () => sendAction({ type: "ROLL" });
-  const toggleKeep = (index) => sendAction({ type: "KEEP_TOGGLE", keepIndices: [index] });
+  const rollDice = () => {
+    const keepIndices = [];
+    for (let i = 0; i < Math.max(serverKept.length, localKept.length); i += 1) {
+      if (Boolean(serverKept[i]) !== Boolean(localKept[i])) {
+        keepIndices.push(i);
+      }
+    }
+    if (keepIndices.length > 0) {
+      expectedKeptRef.current = localKept.map(Boolean);
+      setPendingRollAfterKeepSync(true);
+      pendingRollRef.current = true;
+      sendAction({ type: "KEEP_TOGGLE", keepIndices });
+      return;
+    }
+    sendAction({ type: "ROLL" });
+  };
+
+  const toggleKeep = (index) => {
+    setLocalKept((prev) => {
+      const next = [...prev];
+      next[index] = !next[index];
+      return next;
+    });
+  };
   const selectScore = (category, key) => {
     if (!myUserId) return;
     setPendingSelection({ userId: myUserId, scoreCategory: category, key });
@@ -329,9 +424,9 @@ export default function GamePage() {
                 {(gameState.dice ?? []).map((die, idx) => (
                   <button
                     key={`die-${idx}`}
-                    className={`die ${gameState.kept?.[idx] ? "kept" : ""}`}
-                    onClick={() => isMyTurn && toggleKeep(idx)}
-                    disabled={!isMyTurn || gameOver}
+                    className={`die ${displayedKept?.[idx] ? "kept" : ""}`}
+                    onClick={() => canToggleKeep && toggleKeep(idx)}
+                    disabled={!canToggleKeep}
                   >
                     {die}
                   </button>
@@ -339,7 +434,7 @@ export default function GamePage() {
               </div>
               <div className="footer-actions" style={{ justifyContent: "space-between" }}>
                 <div className="subtle">{isMyTurn ? "내 턴입니다." : "상대 턴 진행 중"}</div>
-                <button className="button primary" disabled={!isMyTurn || gameState.leftRollCnt === 0 || gameOver} onClick={rollDice}>
+                <button className="button primary" disabled={!isMyTurn || gameState.leftRollCnt === 0 || gameOver || pendingRollAfterKeepSync} onClick={rollDice}>
                   Roll
                 </button>
               </div>
@@ -407,7 +502,7 @@ export default function GamePage() {
                     <tr>
                       <td>Upper</td>
                       {columns.map((id) => (
-                        <td key={`upper-${id}`}>{gameState.scores?.[String(id)]?.upperScore ?? "-"}</td>
+                        <td key={`upper-${id}`}>{(gameState.scores?.[String(id)]?.upperScore ?? "-") + "/63"}</td>
                       ))}
                     </tr>
                     <tr>

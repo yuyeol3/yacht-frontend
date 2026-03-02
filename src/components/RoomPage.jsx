@@ -84,6 +84,7 @@ export default function RoomPage() {
   useEffect(() => {
     let unsubRoom = null;
     let unsubErr = null;
+    let unsubErrLegacy = null;
     let active = true;
 
     connectWs({
@@ -121,11 +122,12 @@ export default function RoomPage() {
           }
         });
 
-        unsubErr = subscribeWs(`/user/queue/errors`, (msg) => {
+        const handleSocketError = (msg) => {
           try {
             const payload = JSON.parse(msg.body);
-            const code = payload?.data?.code;
-            const message = payload?.data?.message ?? "동작이 허용되지 않습니다.";
+            const errorData = payload?.data ?? payload;
+            const code = errorData?.code;
+            const message = errorData?.message ?? "동작이 허용되지 않습니다.";
             const shouldSuppressNotFound = code === "C003" && roomRef.current != null;
             if (!shouldSuppressNotFound) {
               setSocketError(message);
@@ -141,10 +143,18 @@ export default function RoomPage() {
                 })
                 .catch(() => navigate("/lobby"));
             }
+
+            if (code === "G007") {
+              navigate("/lobby", { state: { roomError: message } });
+            }
           } catch (err) {
             setSocketError("서버 에러 메시지를 처리하지 못했습니다.");
           }
-        });
+        };
+
+        unsubErr = subscribeWs(`/user/queue/errors`, handleSocketError);
+        // Fallback: some brokers expose user queue without `/user` prefix.
+        unsubErrLegacy = subscribeWs(`/queue/errors`, handleSocketError);
       })
       .catch(() => {
         if (active) {
@@ -157,6 +167,7 @@ export default function RoomPage() {
       setConnected(false);
       if (unsubRoom) unsubRoom();
       if (unsubErr) unsubErr();
+      if (unsubErrLegacy) unsubErrLegacy();
     };
   }, [roomId, navigate]);
 
