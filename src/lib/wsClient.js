@@ -1,25 +1,42 @@
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
-import { API_BASE } from "./api.js";
 import { getSocketAccessToken } from "./auth.js";
 
 let client = null;
 let connectPromise = null;
+let clientWsUrl = null;
 
-function createClient() {
+export function toSockJsUrl(wsUrl) {
+  return wsUrl
+    .replace(/^ws:\/\//, "http://")
+    .replace(/^wss:\/\//, "https://");
+}
+
+function createClient(wsUrl) {
+  const sockJsUrl = toSockJsUrl(wsUrl);
   const next = new Client({
-    webSocketFactory: () => new SockJS(`${API_BASE}/ws-stomp`),
+    webSocketFactory: () => new SockJS(sockJsUrl),
     reconnectDelay: 4000
   });
   client = next;
+  clientWsUrl = wsUrl;
   return next;
 }
 
 export async function connectWs({
+  wsUrl,
   onWebSocketError,
   onStompError,
   onAuthFailure
 } = {}) {
+  if (!wsUrl) {
+    throw new Error("NO_WS_URL");
+  }
+
+  if (client && clientWsUrl !== wsUrl) {
+    disconnectWs();
+  }
+
   if (client) {
     if (typeof onWebSocketError === "function") {
       client.onWebSocketError = onWebSocketError;
@@ -36,7 +53,7 @@ export async function connectWs({
     return connectPromise;
   }
 
-  const next = client ?? createClient();
+  const next = client ?? createClient(wsUrl);
 
   next.beforeConnect = async () => {
     const token = await getSocketAccessToken();
@@ -54,20 +71,24 @@ export async function connectWs({
     next.onStompError = onStompError;
   }
 
-  connectPromise = new Promise((resolve, reject) => {
+  let pendingPromise;
+  pendingPromise = new Promise((resolve, reject) => {
     next.onConnect = () => {
-      connectPromise = null;
+      if (connectPromise === pendingPromise) {
+        connectPromise = null;
+      }
       resolve(next);
     };
 
     next.onWebSocketClose = (evt) => {
-      if (connectPromise) {
+      if (connectPromise === pendingPromise) {
         connectPromise = null;
         reject(new Error(evt?.reason || "WS_CONNECT_CLOSED"));
       }
     };
   });
 
+  connectPromise = pendingPromise;
   next.activate();
   return connectPromise;
 }
@@ -98,6 +119,7 @@ export function disconnectWs() {
     client.deactivate();
     client = null;
   }
+  clientWsUrl = null;
 }
 
 export function isWsConnected() {

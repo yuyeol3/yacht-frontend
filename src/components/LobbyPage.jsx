@@ -69,11 +69,11 @@ export default function LobbyPage() {
     if (!roomName.trim()) return;
     setError("");
     try {
-      const roomId = await apiFetch("/rooms", {
+      const createdRoom = await apiFetch("/rooms", {
         method: "POST",
         body: JSON.stringify({ roomName: roomName.trim() })
       });
-      navigate(`/rooms/${roomId}`);
+      navigate(`/rooms/${createdRoom.roomId}`, { state: { room: createdRoom } });
     } catch (err) {
       setError(err.message);
     }
@@ -119,7 +119,7 @@ export default function LobbyPage() {
                     <div className="tag">{room.participatedUsers ?? 0} / 4</div>
                   </div>
                   <div className="footer-actions">
-                    <button className="button primary" onClick={() => navigate(`/rooms/${room.id}`)}>Enter</button>
+                    <button className="button primary" onClick={() => navigate(`/rooms/${room.id}`, { state: { room } })}>Enter</button>
                   </div>
                 </div>
               ))}

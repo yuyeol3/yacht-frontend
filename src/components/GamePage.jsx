@@ -7,11 +7,19 @@ import { connectWs, publishWs, subscribeWs } from "../lib/wsClient.js";
 import { SCORE_CATEGORIES, calcPossibleScores } from "../lib/score.js";
 import DiceRoll3DOverlay from "./DiceRoll3DOverlay.jsx";
 
+function normalizeRoom(room) {
+  if (!room) return room;
+  return {
+    ...room,
+    id: room.id ?? room.roomId
+  };
+}
+
 export default function GamePage() {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const [room, setRoom] = useState(null);
+  const [room, setRoom] = useState(() => normalizeRoom(location.state?.room) ?? null);
   const [gameState, setGameState] = useState(null);
   const [gameOver, setGameOver] = useState(false);
   const [ranking, setRanking] = useState([]);
@@ -31,11 +39,12 @@ export default function GamePage() {
   const pendingRollRef = useRef(false);
   const expectedKeptRef = useRef(null);
   const profile = getProfile();
+  const roomWsUrl = room?.gameServer?.wsUrl;
 
   useEffect(() => {
     const loadRoom = async () => {
       try {
-        const data = await apiFetch(`/rooms/${roomId}`);
+        const data = normalizeRoom(await apiFetch(`/rooms/${roomId}`));
         setRoom(data);
         setError("");
       } catch (err) {
@@ -158,12 +167,17 @@ export default function GamePage() {
   };
 
   useEffect(() => {
+    if (!roomWsUrl) return;
+
     let unsubRoom = null;
     let unsubErr = null;
     let unsubErrLegacy = null;
     let active = true;
 
+    setSocketError("");
+
     connectWs({
+      wsUrl: roomWsUrl,
       onWebSocketError: () => setSocketError("WebSocket 연결이 끊겼습니다."),
       onStompError: () => setSocketError("서버에서 오류를 반환했습니다. 다시 시도해 주세요."),
       onAuthFailure: () => navigate("/login")
@@ -258,7 +272,7 @@ export default function GamePage() {
       if (unsubErr) unsubErr();
       if (unsubErrLegacy) unsubErrLegacy();
     };
-  }, [roomId, navigate]);
+  }, [roomId, roomWsUrl, navigate]);
 
   useEffect(() => {
     if (!pendingSelection || !gameState) return;

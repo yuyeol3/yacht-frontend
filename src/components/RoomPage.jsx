@@ -1,14 +1,23 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import TopBar from "./TopBar.jsx";
 import { apiFetch } from "../lib/api.js";
 import { clearAuth, getAccessToken, getProfile, mergeProfile, parseJwt } from "../lib/auth.js";
 import { connectWs, publishWs, subscribeWs } from "../lib/wsClient.js";
 
+function normalizeRoom(room) {
+  if (!room) return room;
+  return {
+    ...room,
+    id: room.id ?? room.roomId
+  };
+}
+
 export default function RoomPage() {
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const [room, setRoom] = useState(null);
+  const location = useLocation();
+  const [room, setRoom] = useState(() => normalizeRoom(location.state?.room) ?? null);
   const [error, setError] = useState("");
   const [socketError, setSocketError] = useState("");
   const [connected, setConnected] = useState(false);
@@ -17,6 +26,7 @@ export default function RoomPage() {
   const roomRef = useRef(null);
 
   const profile = getProfile();
+  const roomWsUrl = room?.gameServer?.wsUrl;
 
   const myUserId = useMemo(() => {
     const numericId = Number(profile?.userId);
@@ -64,7 +74,7 @@ export default function RoomPage() {
 
   const refreshRoom = async ({ silent = false } = {}) => {
     try {
-      const data = await apiFetch(`/rooms/${roomId}`);
+      const data = normalizeRoom(await apiFetch(`/rooms/${roomId}`));
       setRoom(data);
       setError("");
       return data;
@@ -78,16 +88,27 @@ export default function RoomPage() {
 
   useEffect(() => {
     setEnterRequested(false);
+    setConnected(false);
+    setSocketError("");
+    if (location.state?.room) {
+      setRoom(normalizeRoom(location.state.room));
+    }
     refreshRoom().catch(() => {});
-  }, [roomId]);
+  }, [roomId, location.state]);
 
   useEffect(() => {
+    if (!roomWsUrl) return;
+
     let unsubRoom = null;
     let unsubErr = null;
     let unsubErrLegacy = null;
     let active = true;
 
+    setConnected(false);
+    setSocketError("");
+
     connectWs({
+      wsUrl: roomWsUrl,
       onWebSocketError: () => setSocketError("WebSocket 연결이 끊겼습니다."),
       onStompError: () => setSocketError("서버에서 오류를 반환했습니다. 다시 시도해 주세요."),
       onAuthFailure: () => {
@@ -105,15 +126,19 @@ export default function RoomPage() {
             if (payload?.type === "START") {
               if (payload?.data) {
                 sessionStorage.setItem(`yacht.initialGameState.${roomId}`, JSON.stringify(payload.data));
-                navigate(`/game/${roomId}`, { state: { initialGameState: payload.data } });
+                navigate(`/game/${roomId}`, { state: { initialGameState: payload.data, room: roomRef.current } });
               } else {
-                navigate(`/game/${roomId}`);
+                navigate(`/game/${roomId}`, { state: { room: roomRef.current } });
               }
               return;
             }
             if (["ENTER", "QUIT", "TOGGLE_READY"].includes(payload?.type)) {
               if (payload?.data && (payload?.data?.host?.userId != null || payload?.data?.participatedUsers != null)) {
-                setRoom(payload.data);
+                setRoom((prev) => normalizeRoom({
+                  ...prev,
+                  ...payload.data,
+                  gameServer: payload.data.gameServer ?? prev?.gameServer
+                }));
               }
               refreshRoom({ silent: true }).catch(() => {});
             }
@@ -169,10 +194,11 @@ export default function RoomPage() {
       if (unsubErr) unsubErr();
       if (unsubErrLegacy) unsubErrLegacy();
     };
-  }, [roomId, navigate]);
+  }, [roomId, roomWsUrl, navigate]);
 
   useEffect(() => {
     if (!connected || !room || enterRequested) return;
+    if (!Array.isArray(room.participants)) return;
     if (isParticipant) return;
     publishWs({ destination: `/pub/rooms/${roomId}/enter` });
     setEnterRequested(true);
