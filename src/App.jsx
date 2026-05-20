@@ -34,8 +34,15 @@ function RequireAuth({ children }) {
     const check = async () => {
       const token = getAccessToken();
       if (!token) {
+        const refreshed = await refreshAccessToken();
+        if (!active) return;
         if (active) {
-          setAuthed(false);
+          if (refreshed) {
+            setAuthed(true);
+          } else {
+            clearAuth();
+            setAuthed(false);
+          }
           setReady(true);
         }
         return;
@@ -82,8 +89,15 @@ function PublicOnly({ children }) {
     const check = async () => {
       const token = getAccessToken();
       if (!token) {
+        const refreshed = await refreshAccessToken();
+        if (!active) return;
         if (active) {
-          setAuthed(false);
+          if (refreshed) {
+            setAuthed(true);
+          } else {
+            clearAuth();
+            setAuthed(false);
+          }
           setReady(true);
         }
         return;

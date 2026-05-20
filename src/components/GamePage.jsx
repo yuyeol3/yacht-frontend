@@ -136,7 +136,7 @@ export default function GamePage() {
       return [...state.playedResults]
         .map((entry) => ({
           id: entry.id,
-          name: entry.nickname ?? `User #${entry.id}`,
+          name: entry.nickname ?? "Player",
           total: entry.score ?? 0,
           rank: entry.rank ?? null,
           result: entry.result ?? null
@@ -151,7 +151,7 @@ export default function GamePage() {
     return Object.keys(scores)
       .map((id) => ({
         id: Number(id),
-        name: participantsMap.get(Number(id)) ?? `User #${id}`,
+        name: participantsMap.get(Number(id)) ?? "Player",
         total: scores[id]?.total ?? 0
       }))
       .sort((a, b) => b.total - a.total);
@@ -203,13 +203,12 @@ export default function GamePage() {
                 setShowRollOverlay(true);
               }
 
-              if (payload.data.curTurnUserId === myUserId) {
-                const bestLabel = findBestCategoryLabel(payload.data, myUserId);
-                if (bestLabel) {
-                  setCategoryToastText(bestLabel);
-                  setShowCategoryToast(false);
-                  setTimeout(() => setShowCategoryToast(true), 10);
-                }
+              const turnUserIdFromPayload = Number(payload.data.curTurnUserId);
+              const bestLabel = findBestCategoryLabel(payload.data, turnUserIdFromPayload);
+              if (bestLabel) {
+                setCategoryToastText(bestLabel);
+                setShowCategoryToast(false);
+                setTimeout(() => setShowCategoryToast(true), 10);
               }
             }
 
@@ -379,7 +378,7 @@ export default function GamePage() {
 
   return (
     <div>
-      <TopBar subtitle={`Game #${roomId}`} />
+      <TopBar subtitle="Game" />
       <div className={`category-toast ${showCategoryToast ? "show" : ""}`}>
         {categoryToastText}
       </div>
@@ -406,7 +405,7 @@ export default function GamePage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontSize: 22, fontWeight: 700 }}>
-                    {participantsMap.get(gameState.curTurnUserId) ?? `User #${gameState.curTurnUserId}`}
+                    {participantsMap.get(gameState.curTurnUserId) ?? "Player"}
                   </div>
                   <div className="subtle">Round {gameState.round} / Turn {gameState.turn + 1}</div>
                 </div>
@@ -452,7 +451,7 @@ export default function GamePage() {
                     <tr>
                       <th>Category</th>
                       {columns.map((id) => (
-                        <th key={`head-${id}`}>{participantsMap.get(id) ?? `User #${id}`}</th>
+                        <th key={`head-${id}`}>{participantsMap.get(id) ?? "Player"}</th>
                       ))}
                     </tr>
                   </thead>

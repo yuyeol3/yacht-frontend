@@ -193,7 +193,7 @@ export default function RoomPage() {
 
   return (
     <div>
-      <TopBar subtitle={`Room #${roomId}`} />
+      <TopBar subtitle="Room" />
       <div className="container">
         {error ? <div className="error">{error}</div> : null}
         {socketError ? <div className="error" style={{ marginTop: 12 }}>{socketError}</div> : null}
@@ -223,7 +223,7 @@ export default function RoomPage() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <div style={{ fontWeight: 600 }}>{p.userNick}</div>
-                      <div className="subtle">User #{p.userId}</div>
+                      <div className="subtle">Participant</div>
                     </div>
                     <div className="tag" style={{ background: p.isReady ? "rgba(52, 211, 153, 0.2)" : "rgba(148, 163, 184, 0.2)", color: p.isReady ? "var(--ok)" : "var(--ink-3)" }}>
                       {p.isReady ? "READY" : "WAIT"}
