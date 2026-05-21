@@ -15,6 +15,13 @@ function normalizeRoom(room) {
   };
 }
 
+function formatLeftMillis(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
 export default function GamePage() {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -301,19 +308,33 @@ export default function GamePage() {
   }, [showCategoryToast]);
 
   useEffect(() => {
-    if (!gameState?.turnTimeoutTime) return;
+    const serverLeftMillis = Number(gameState?.leftMillis);
+    if (Number.isFinite(serverLeftMillis)) {
+      const receivedAt = Date.now();
+      const update = () => {
+        const elapsed = Date.now() - receivedAt;
+        setTimeLeft(formatLeftMillis(serverLeftMillis - elapsed));
+      };
+      update();
+      const timer = setInterval(update, 1000);
+      return () => clearInterval(timer);
+    }
+
+    if (!gameState?.turnTimeoutTime) {
+      setTimeLeft("--:--");
+      return;
+    }
+
     const update = () => {
       const normalizedTime = gameState.turnTimeoutTime.replace(/(\.\d{3})\d+$/, "$1");
       const target = new Date(`${normalizedTime}Z`).getTime();
       const diff = Math.max(0, target - Date.now());
-      const mins = Math.floor(diff / 60000);
-      const secs = Math.floor((diff % 60000) / 1000);
-      setTimeLeft(`${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`);
+      setTimeLeft(formatLeftMillis(diff));
     };
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [gameState?.turnTimeoutTime]);
+  }, [gameState?.leftMillis, gameState?.turnTimeoutTime]);
 
   useEffect(() => {
     if (!isMyTurn) {
